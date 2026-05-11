@@ -1,0 +1,19 @@
+# Secrets & credentials
+*.json
+.env
+.env.*
+*firebase-adminsdk*.json
+docs/foundry-app-f71f1-firebase-adminsdk-fbsvc-5e7f68cdee.json
+foundry-app/phase-5-module-cdn/.env
+
+# Node
+node_modules/
+
+# Build outputs
+dist/
+build/
+.next/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,56 @@
+[2026-04-15T00:00:00Z] BUILD START — Phase 5 (phase-5-flutter-verification-integration) Cycle 1
+[2026-04-15T00:00:01Z] Reading validated.md — COMPLETE
+[2026-04-15T00:00:02Z] Reading ROLE.md, PROTOCOL.md, SCHEMA.md — COMPLETE
+[2026-04-15T00:00:03Z] Reading existing source files:
+[2026-04-15T00:00:03Z]   lib/services/module_download_service.dart — READ OK
+[2026-04-15T00:00:03Z]   lib/screens/loading_screen.dart — READ OK
+[2026-04-15T00:00:03Z]   lib/security/bundle_verifier.dart — READ OK
+[2026-04-15T00:00:03Z]   lib/main.dart — READ OK (Sentry.init NOT present — noting as deviation)
+[2026-04-15T00:00:03Z]   pubspec.yaml — READ OK (sentry_flutter NOT present — must add)
+[2026-04-15T00:00:04Z] Pre-build observations:
+[2026-04-15T00:00:04Z]   - sentry_flutter not in pubspec.yaml; install_command required
+[2026-04-15T00:00:04Z]   - Sentry.init absent from main.dart; captureException calls will be no-ops at runtime
+[2026-04-15T00:00:04Z]   - bundle_verifier.dart has real-looking P-256 key (not placeholder) — no change needed
+[2026-04-15T00:00:04Z]   - loading_screen.dart _buildFallbackFromCache() already has signature:'' — already correct
+[2026-04-15T00:00:04Z]   - test/services/ directory already exists
+[2026-04-15T00:00:05Z] CHECKPOINT-1: Installing dependencies
+[2026-04-15T00:01:00Z]   flutter pub add sentry_flutter → exit 0 (version 8.14.2)
+[2026-04-15T00:01:00Z]   cryptography — pre-existing, no action needed
+[2026-04-15T00:01:00Z] CHECKPOINT-1: COMPLETE
+[2026-04-15T00:01:01Z] CHECKPOINT-2: Creating data models
+[2026-04-15T00:01:01Z]   BundleSignatureException class — added to module_download_service.dart
+[2026-04-15T00:02:00Z] CHECKPOINT-2: COMPLETE
+[2026-04-15T00:02:01Z] CHECKPOINT-3: Creating services/logic
+[2026-04-15T00:02:01Z]   Modified lib/services/module_download_service.dart
+[2026-04-15T00:02:01Z]     + import 'package:sentry_flutter/sentry_flutter.dart'
+[2026-04-15T00:02:01Z]     + import '../security/bundle_verifier.dart'
+[2026-04-15T00:02:01Z]     + Step 3 ECDSA verification block (after checksum, before writeAsBytes)
+[2026-04-15T00:02:01Z]     + Sentry.captureException before throw on invalid signature
+[2026-04-15T00:02:01Z]   Modified lib/screens/loading_screen.dart
+[2026-04-15T00:02:01Z]     + import 'package:sentry_flutter/sentry_flutter.dart'
+[2026-04-15T00:02:01Z]     + String? _signatureError state field
+[2026-04-15T00:02:01Z]     + on BundleSignatureException catch block with return
+[2026-04-15T00:02:01Z]     + rethrow guard in outer catch(e)
+[2026-04-15T00:02:01Z]     + _signatureError guard before navigation
+[2026-04-15T00:02:01Z]     + error UI in build() for _signatureError != null
+[2026-04-15T00:02:01Z]   Confirmed lib/security/bundle_verifier.dart
+[2026-04-15T00:02:01Z]     kBundleSigningPublicKey = real P-256 SPKI PEM (not placeholder) — NO CHANGE NEEDED
+[2026-04-15T00:03:00Z] CHECKPOINT-3: COMPLETE
+[2026-04-15T00:03:01Z] CHECKPOINT-4: Creating test files
+[2026-04-15T00:03:01Z]   Created test/services/module_download_service_test.dart
+[2026-04-15T00:03:01Z]     11 tests covering AC-5.4, AC-5.5, AC-5.6 and BundleSignatureException class
+[2026-04-15T00:04:00Z] CHECKPOINT-4: COMPLETE
+[2026-04-15T00:04:01Z] flutter analyze --no-fatal-infos → exit 0 — No issues found
+[2026-04-15T00:04:30Z] flutter test test/services/module_download_service_test.dart → exit 0 — All tests passed (11/11)
+[2026-04-15T00:04:31Z] flutter test --name "download throws BundleSignatureException on bad signature" → exit 0
+[2026-04-15T00:04:32Z] flutter test --name "download skips ECDSA when signature is empty" → exit 0
+[2026-04-15T00:04:33Z] SELF_CHECK: Starting
+[2026-04-15T00:04:33Z] SELF_CHECK: All 4 files exist on disk
+[2026-04-15T00:04:33Z] SELF_CHECK: sentry_flutter install exit 0
+[2026-04-15T00:04:33Z] SELF_CHECK: No FATAL errors in build.log
+[2026-04-15T00:04:33Z] SELF_CHECK: No files written outside lib/ or test/
+[2026-04-15T00:04:33Z] SELF_CHECK: flutter analyze clean
+[2026-04-15T00:04:33Z] SELF_CHECK: All named AC tests pass
+[2026-04-15T00:04:33Z] SELF_CHECK: PASSED
+[2026-04-15T00:04:34Z] Writing built.md
+[2026-04-15T00:04:35Z] BUILD COMPLETE — Phase 5 Cycle 1 — EXIT 0

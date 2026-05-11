@@ -1,0 +1,73 @@
+# .claude/agents/config.yaml
+# 6-Agent Autonomous Build System Configuration (includes FEEDBACK)
+# Version 6.1.0
+
+# ── AGENT DOCUMENT VERSION ─────────────────────────────────────────────
+agent_doc_version: "6.1.0"
+# Bump whenever any ROLE/SCHEMA/PROTOCOL document changes.
+# Recorded in every AGENT_TRACE entry. Makes prompt changes auditable.
+#
+# CHANGELOG:
+# 6.1.0 - Added FEEDBACK agent, Launch Verification to BUILDER/TESTER,
+#         Environment requirements to VALIDATOR
+
+# ── MODEL VERSIONS (pinned — never use aliases) ────────────────────────
+models:
+  reasoning: claude-sonnet-4-6-20250514
+  structured_output: claude-haiku-4-5-20251001
+# Pinned because: aliases silently change behavior across Anthropic releases.
+# Prompt engineering tuned to one version may break on another.
+
+# ── RUNTIME ────────────────────────────────────────────────────────────
+runtime:
+  max_cycles_per_phase: 3
+  validator_mode: pause_and_ask      # pause_and_ask | assume_and_log
+  log_level: structured              # structured | verbose | minimal
+
+# ── TOKEN BUDGETS ───────────────────────────────────────────────────────
+tokens:
+  max_tokens_per_phase: 20000
+  budget_warning: 80000
+  budget_hard_limit: 120000
+
+# ── TEST TIMEOUTS ───────────────────────────────────────────────────────
+test_timeouts:
+  unit: 30
+  integration: 60
+  e2e: 180
+  performance: 90
+
+# ── CHECKPOINTING ───────────────────────────────────────────────────────
+checkpointing:
+  enabled: true
+  snapshot_validated_before_overwrite: true
+
+# ── CONFIDENCE THRESHOLDS ───────────────────────────────────────────────
+confidence:
+  pause_on_low: true
+  low_threshold: 0.6
+  medium_threshold: 0.85
+
+# ── SANITY CHECKS ───────────────────────────────────────────────────────
+sanity_checks:
+  enabled: true
+  critical_violations_pause: true
+  warning_violations_log: true
+
+# ── LAUNCH VERIFICATION ─────────────────────────────────────────────────
+launch_verification:
+  enabled: true                    # NEW in 6.1.0
+  required_for_apps: true          # Apps MUST have launch verification AC
+  timeout_seconds: 60              # Max wait for app to launch
+  capture_screenshot: true         # Attempt to capture first frame
+  target_devices:                  # Preferred devices in order
+    - emulator                     # Android emulator (first choice)
+    - windows                      # Windows desktop (second choice)
+    - chrome                       # Chrome browser (fallback)
+
+# ── FEEDBACK INTEGRATION ────────────────────────────────────────────────
+feedback:
+  enabled: true                    # NEW in 6.1.0
+  post_delivery_check: true        # Check for FEEDBACK_REPORT.md after delivery
+  auto_route: true                 # Automatically route feedback to agents
+  require_human_approval_for_gaps: true  # ARCHITECTURE_GAP needs approval

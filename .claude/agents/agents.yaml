@@ -1,0 +1,129 @@
+# .claude/agents/agents.yaml
+# Permission Map - Mechanically Enforced
+# Orchestrator enforces every entry here at the filesystem level.
+# "Reviewer never talks to Builder" is not a suggestion — it is this file.
+
+agent_doc_version: "6.0.0"
+# Bump this whenever any ROLE/SCHEMA/PROTOCOL document changes.
+# Recorded in every AGENT_TRACE entry for full auditability.
+
+agents:
+
+  orchestrator:
+    model_role: reasoning
+    read_paths:
+      - ".claude/**"
+      - "{phase}/planner/plan.md"
+      - "{phase}/validator/validated.md"
+      - "{phase}/builder/built.md"
+      - "{phase}/builder/SELF_CHECK.md"
+      - "{phase}/builder/SELF_FAILURE.md"
+      - "{phase}/tester/test-report.md"
+      - "{phase}/reviewer/patch.md"
+      - "QUESTIONS.md"
+      - "HANDOFF_CHECKS.md"
+      - "INTEGRATION_TEST_REPORT.md"
+      - "FINAL_SUMMARY.md"
+    write_paths:
+      - ".claude/memory/RUN_STATE.md"
+      - ".claude/memory/AGENT_TRACE.md"
+      - ".claude/memory/TOKEN_LEDGER.md"
+      - ".claude/memory/RETRY_HISTORY.md"
+      - "HANDOFF_CHECKS.md"
+      - "FINAL_SUMMARY.md"
+      - "SANITY_VIOLATIONS.md"
+    forbidden_writes:
+      - "src/**"
+      - "tests/**"
+      - "{phase}/validator/**"
+      - "{phase}/builder/**"
+      - "{phase}/tester/**"
+      - "{phase}/reviewer/**"
+      - "{phase}/planner/**"
+
+  planner:
+    model_role: reasoning
+    read_paths:
+      - "doc.md"
+      - ".claude/memory/**"
+    write_paths:
+      - "{phase}/planner/**"
+      - ".claude/memory/PHASE_INDEX.md"
+    forbidden_writes:
+      - "src/**"
+      - "tests/**"
+      - "{phase}/validator/**"
+      - "{phase}/builder/**"
+      - "{phase}/tester/**"
+      - "{phase}/reviewer/**"
+
+  validator:
+    model_role: reasoning
+    read_paths:
+      - "{phase}/planner/plan.md"
+      - "{phase}/planner/plan.interface-check.md"
+      - "{phase}/reviewer/patch.md"
+      - "{phase}/validator/validated.md"
+      - "{phase}/validator/validated.md.cycle-1.bak"  # drift check baseline
+    write_paths:
+      - "{phase}/validator/**"
+      - "QUESTIONS.md"   # append-only — enforced by Orchestrator
+    forbidden_writes:
+      - "doc.md"
+      - "src/**"
+      - "tests/**"
+      - "{phase}/builder/**"
+      - "{phase}/tester/**"
+      - "{phase}/reviewer/**"
+      - "{phase}/planner/**"
+
+  builder:
+    model_role: reasoning
+    read_paths:
+      - "{phase}/validator/validated.md"
+      - "{phase}/builder/checkpoints/**"
+    write_paths:
+      - "{phase}/builder/**"
+      - "src/**"
+      - "tests/**"
+    forbidden_writes:
+      - "doc.md"
+      - "{phase}/validator/**"
+      - "{phase}/tester/**"
+      - "{phase}/reviewer/**"
+      - "{phase}/planner/**"
+      - ".claude/**"
+
+  tester:
+    model_role: reasoning
+    read_paths:
+      - "{phase}/validator/validated.md"
+      - "{phase}/builder/built.md"
+      - "src/**"
+      - "tests/**"
+    write_paths:
+      - "{phase}/tester/**"
+      - "INTEGRATION_TEST_REPORT.md"   # only for final integration test spawn
+    forbidden_writes:
+      - "src/**"
+      - "{phase}/builder/**"
+      - "{phase}/validator/**"
+      - "{phase}/reviewer/**"
+      - "{phase}/planner/**"
+      - ".claude/**"
+
+  reviewer:
+    model_role: reasoning
+    read_paths:
+      - "{phase}/tester/test-report.md"
+      - "INTEGRATION_TEST_REPORT.md"
+    write_paths:
+      - "{phase}/reviewer/**"
+    forbidden_writes:
+      - "src/**"
+      - "tests/**"
+      - "{phase}/validator/**"
+      - "{phase}/builder/**"
+      - "{phase}/tester/**"
+      - "{phase}/planner/**"
+      - ".claude/**"

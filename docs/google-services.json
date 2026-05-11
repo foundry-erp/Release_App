@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "819068716771",
+    "project_id": "foundry-app-f71f1",
+    "storage_bucket": "foundry-app-f71f1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:819068716771:android:5bec05571a510b0f0e67d6",
+        "android_client_info": {
+          "package_name": "com.example.foundry_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA9VhCy16B8GuJkd6Nt9g_WNtFS4saoUs0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
