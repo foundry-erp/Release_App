@@ -79,7 +79,9 @@ jobs:
           security default-keychain -s build.keychain
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
           security set-keychain-settings -t 7200 -u build.keychain
-          echo "Keychain created and configured"
+          # Add build.keychain to the search list (critical for codesign to find certs)
+          security list-keychains -d user -s build.keychain $(security list-keychains -d user | sed s/\"//g)
+          echo "Keychain created and added to search list"
 
       - name: Import signing certificate (P12)
         run: |
@@ -99,6 +101,8 @@ jobs:
             build.keychain
           rm -f /tmp/dist_cert.p12
           echo "Distribution certificate imported"
+          echo "Available signing identities:"
+          security find-identity -p codesigning -v
 
       - name: Install provisioning profile
         id: profile
