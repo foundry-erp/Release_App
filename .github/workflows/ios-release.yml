@@ -161,6 +161,17 @@ jobs:
           echo "ExportOptions.plist configured for manual signing"
           cat ios/ExportOptions.plist
 
+      - name: Configure Xcode project for manual signing
+        run: |
+          # The Xcode project defaults to automatic signing which fails in CI
+          # (no Apple ID session). Switch to manual signing with our distribution cert.
+          PROJECT="ios/Runner.xcodeproj/project.pbxproj"
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PROJECT"
+          sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = ${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }};/g' "$PROJECT"
+          sed -i '' '/CODE_SIGN_STYLE = Manual/a\'$'\n''\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "'"${{ steps.profile.outputs.profile_name }}"'";' "$PROJECT"
+          sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = ""/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution"/g' "$PROJECT"
+          echo "Xcode project configured for manual signing"
+
       - name: Build iOS IPA
         run: |
           flutter build ipa \
