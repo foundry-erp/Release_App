@@ -187,30 +187,11 @@ jobs:
             --tree-shake-icons \
             --no-codesign
 
-      - name: Configure Xcode project for manual signing
-        env:
-          TEAM_ID: ${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}
-          PROFILE_NAME: ${{ steps.profile.outputs.profile_name }}
-        run: |
-          # Patch AFTER flutter build (which may regenerate project settings)
-          PROJECT="ios/Runner.xcodeproj/project.pbxproj"
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PROJECT"
-          sed -i '' 's/"iPhone Developer"/"Apple Distribution"/g' "$PROJECT"
-          awk -v team="$TEAM_ID" -v profile="$PROFILE_NAME" '
-          {
-            print
-            if ($0 ~ /CODE_SIGN_STYLE = Manual;/) {
-              print "\t\t\t\tDEVELOPMENT_TEAM = " team ";"
-              print "\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"" profile "\";"
-            }
-          }' "$PROJECT" > "${PROJECT}.tmp" && mv "${PROJECT}.tmp" "$PROJECT"
-          echo "Patched project.pbxproj (after flutter build):"
-          grep -c "CODE_SIGN_STYLE = Manual" "$PROJECT" | xargs -I{} echo "  Manual signing: {}"
-          grep -c "DEVELOPMENT_TEAM" "$PROJECT" | xargs -I{} echo "  DEVELOPMENT_TEAM: {}"
-          grep "DEVELOPMENT_TEAM" "$PROJECT" | head -1
-
       - name: Archive and export IPA
         run: |
+          # Archive with CLI signing overrides (safe for all targets).
+          # PROVISIONING_PROFILE_SPECIFIER is NOT passed here — it breaks Pods.
+          # ExportOptions.plist handles provisioning during the export step.
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
@@ -218,7 +199,12 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath build/ios/archive/Runner.xcarchive \
             archive \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}" \
+            "CODE_SIGN_IDENTITY=Apple Distribution" \
             -allowProvisioningUpdates
+
+          echo "Archive complete. Exporting IPA..."
 
           xcodebuild -exportArchive \
             -archivePath build/ios/archive/Runner.xcarchive \
