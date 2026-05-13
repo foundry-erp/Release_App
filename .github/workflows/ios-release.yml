@@ -93,6 +93,18 @@ jobs:
           security list-keychains -d user -s build.keychain $(security list-keychains -d user | sed s/\"//g)
           echo "Keychain created and added to search list"
 
+      - name: Install Apple WWDR certificates
+        run: |
+          # Apple intermediate certs needed for provisioning profile CMS verification
+          curl -sL -o /tmp/AppleWWDRCAG3.cer https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
+          curl -sL -o /tmp/AppleRootCA-G3.cer https://www.apple.com/certificateauthority/AppleRootCA-G3.cer
+          curl -sL -o /tmp/AppleWWDRCA.cer https://developer.apple.com/certificationauthority/AppleWWDRCA.cer
+          security import /tmp/AppleWWDRCAG3.cer -k build.keychain -T /usr/bin/codesign
+          security import /tmp/AppleRootCA-G3.cer -k build.keychain -T /usr/bin/codesign
+          security import /tmp/AppleWWDRCA.cer -k build.keychain -T /usr/bin/codesign
+          rm -f /tmp/Apple*.cer
+          echo "Apple WWDR intermediate certificates installed"
+
       - name: Import signing certificate (P12)
         run: |
           echo "${{ secrets.AIKYAT_FLUTTER_RELEASE_IOS_SIGNING_CERT }}" | base64 --decode > /tmp/dist_cert.p12
@@ -208,7 +220,7 @@ jobs:
       - name: Configure Runner signing (xcodeproj gem)
         env:
           TEAM_ID: ${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}
-          PROFILE_UUID: ${{ steps.profile.outputs.profile_uuid }}
+          PROFILE_NAME: ${{ steps.profile.outputs.profile_name }}
         run: |
           gem install xcodeproj --no-document
           ruby -e '
@@ -221,13 +233,11 @@ jobs:
                 config.build_settings["DEVELOPMENT_TEAM"] = ENV["TEAM_ID"]
                 config.build_settings["CODE_SIGN_IDENTITY"] = "Apple Distribution"
                 config.build_settings["CODE_SIGN_IDENTITY[sdk=iphoneos*]"] = "Apple Distribution"
-                # Use UUID directly — DVTProvisioningProfileManager cant load by name
-                config.build_settings["PROVISIONING_PROFILE"] = ENV["PROFILE_UUID"]
-                config.build_settings["PROVISIONING_PROFILE_SPECIFIER"] = ""
+                config.build_settings["PROVISIONING_PROFILE_SPECIFIER"] = ENV["PROFILE_NAME"]
               end
             end
             project.save
-            puts "Runner signing configured: Manual, Team=#{ENV["TEAM_ID"]}, ProfileUUID=#{ENV["PROFILE_UUID"]}"
+            puts "Runner signing configured: Manual, Team=#{ENV["TEAM_ID"]}, Profile=#{ENV["PROFILE_NAME"]}"
           '
 
       - name: Clean DerivedData
