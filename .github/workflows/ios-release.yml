@@ -186,14 +186,34 @@ jobs:
           grep -c "CODE_SIGN_STYLE = Manual" "$PROJECT" | xargs -I{} echo "  Manual signing entries: {}"
           grep -c "DEVELOPMENT_TEAM" "$PROJECT" | xargs -I{} echo "  DEVELOPMENT_TEAM entries: {}"
 
-      - name: Build iOS IPA
+      - name: Build Flutter iOS (no codesign)
         run: |
-          flutter build ipa \
+          flutter build ios \
             --release \
             --obfuscate \
             --split-debug-info=build/debug-info/ios \
             --tree-shake-icons \
-            --export-options-plist=ios/ExportOptions.plist
+            --no-codesign
+
+      - name: Archive and export IPA
+        run: |
+          xcodebuild -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/ios/archive/Runner.xcarchive \
+            archive \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }} \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="${{ steps.profile.outputs.profile_name }}"
+
+          xcodebuild -exportArchive \
+            -archivePath build/ios/archive/Runner.xcarchive \
+            -exportOptionsPlist ios/ExportOptions.plist \
+            -exportPath build/ios/ipa \
+            -allowProvisioningUpdates
 
       - name: Validate IPA
         id: validate
