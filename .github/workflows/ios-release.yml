@@ -121,6 +121,9 @@ jobs:
           echo "profile_uuid=${PROFILE_UUID}" >> $GITHUB_OUTPUT
           echo "profile_name=${PROFILE_NAME}" >> $GITHUB_OUTPUT
           echo "Provisioning profile installed: ${PROFILE_NAME} (${PROFILE_UUID})"
+          # Validate the installed profile is readable
+          ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision"
+          security cms -D -i "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision" | head -5
 
       - name: Setup App Store Connect API Key
         run: |
@@ -173,14 +176,18 @@ jobs:
           PROJECT="ios/Runner.xcodeproj/project.pbxproj"
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PROJECT"
           sed -i '' 's/"iPhone Developer"/"Apple Distribution"/g' "$PROJECT"
-          # Use awk to insert DEVELOPMENT_TEAM after each Manual signing entry
-          awk -v team="$TEAM_ID" '
+          # Use awk to insert DEVELOPMENT_TEAM and PROVISIONING_PROFILE_SPECIFIER
+          # Only in Runner target build configs (not Pods)
+          awk -v team="$TEAM_ID" -v profile="$PROFILE_NAME" '
           {
             print
             if ($0 ~ /CODE_SIGN_STYLE = Manual;/) {
               print "\t\t\t\tDEVELOPMENT_TEAM = " team ";"
+              print "\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"" profile "\";"
             }
           }' "$PROJECT" > "${PROJECT}.tmp" && mv "${PROJECT}.tmp" "$PROJECT"
+          # Remove PROVISIONING_PROFILE_SPECIFIER from Pods targets (they don't need it)
+          # The Pods.xcodeproj is separate and won't be affected by Runner's pbxproj
           echo "Patched project.pbxproj:"
           grep -c "CODE_SIGN_STYLE = Manual" "$PROJECT" | xargs -I{} echo "  Manual signing entries: {}"
           grep -c "DEVELOPMENT_TEAM" "$PROJECT" | xargs -I{} echo "  DEVELOPMENT_TEAM entries: {}"
@@ -203,10 +210,6 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath build/ios/archive/Runner.xcarchive \
             archive \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]=${{ steps.profile.outputs.profile_name }}" \
             -allowProvisioningUpdates
 
           xcodebuild -exportArchive \
