@@ -162,15 +162,30 @@ jobs:
           cat ios/ExportOptions.plist
 
       - name: Configure Xcode project for manual signing
+        env:
+          TEAM_ID: ${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}
+          PROFILE_NAME: ${{ steps.profile.outputs.profile_name }}
+          PROFILE_UUID: ${{ steps.profile.outputs.profile_uuid }}
         run: |
-          # The Xcode project defaults to automatic signing which fails in CI
-          # (no Apple ID session). Switch to manual signing with our distribution cert.
+          # The Xcode project defaults to automatic signing which fails in CI.
+          # Patch project.pbxproj for manual signing with distribution cert.
           PROJECT="ios/Runner.xcodeproj/project.pbxproj"
+
+          # 1. Switch signing style
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PROJECT"
-          sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = ${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }};/g' "$PROJECT"
-          sed -i '' '/CODE_SIGN_STYLE = Manual/a\'$'\n''\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "'"${{ steps.profile.outputs.profile_name }}"'";' "$PROJECT"
-          sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = ""/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution"/g' "$PROJECT"
-          echo "Xcode project configured for manual signing"
+
+          # 2. Replace iPhone Developer identity with Apple Distribution
+          sed -i '' 's/"iPhone Developer"/"Apple Distribution"/g' "$PROJECT"
+
+          # 3. Add DEVELOPMENT_TEAM, PROVISIONING_PROFILE_SPECIFIER after each CODE_SIGN_STYLE = Manual
+          sed -i '' "/CODE_SIGN_STYLE = Manual;/a\\
+\\				DEVELOPMENT_TEAM = ${TEAM_ID};\\
+\\				PROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";
+" "$PROJECT"
+
+          echo "Patched project.pbxproj for manual signing"
+          grep -c "CODE_SIGN_STYLE = Manual" "$PROJECT" && echo "Manual signing entries found"
+          grep -c "DEVELOPMENT_TEAM = ${TEAM_ID}" "$PROJECT" && echo "Team ID entries found"
 
       - name: Build iOS IPA
         run: |
