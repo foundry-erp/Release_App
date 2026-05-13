@@ -217,34 +217,13 @@ jobs:
             --tree-shake-icons \
             --no-codesign
 
-      - name: Configure Runner signing (xcodeproj gem)
-        env:
-          TEAM_ID: ${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}
-          PROFILE_NAME: ${{ steps.profile.outputs.profile_name }}
-        run: |
-          gem install xcodeproj --no-document
-          ruby -e '
-            require "xcodeproj"
-            project = Xcodeproj::Project.open("ios/Runner.xcodeproj")
-            project.targets.each do |target|
-              next unless target.name == "Runner"
-              target.build_configurations.each do |config|
-                config.build_settings["CODE_SIGN_STYLE"] = "Manual"
-                config.build_settings["DEVELOPMENT_TEAM"] = ENV["TEAM_ID"]
-                config.build_settings["CODE_SIGN_IDENTITY"] = "Apple Distribution"
-                config.build_settings["CODE_SIGN_IDENTITY[sdk=iphoneos*]"] = "Apple Distribution"
-                config.build_settings["PROVISIONING_PROFILE_SPECIFIER"] = ENV["PROFILE_NAME"]
-              end
-            end
-            project.save
-            puts "Runner signing configured: Manual, Team=#{ENV["TEAM_ID"]}, Profile=#{ENV["PROFILE_NAME"]}"
-          '
-
       - name: Clean DerivedData
         run: rm -rf ~/Library/Developer/Xcode/DerivedData/Runner-*
 
-      - name: Archive and export IPA
+      - name: Archive without signing
         run: |
+          # Archive with signing disabled — bypasses DVTProvisioningProfileManager
+          # ExportArchive step handles all signing via ExportOptions.plist
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
@@ -252,14 +231,21 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath build/ios/archive/Runner.xcarchive \
             archive \
-            -allowProvisioningUpdates
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            DEVELOPMENT_TEAM="${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}"
+          echo "Archive complete (unsigned)"
 
-          echo "Archive complete. Exporting IPA..."
-
+      - name: Export and sign IPA
+        run: |
           xcodebuild -exportArchive \
             -archivePath build/ios/archive/Runner.xcarchive \
             -exportOptionsPlist ios/ExportOptions.plist \
-            -exportPath build/ios/ipa
+            -exportPath build/ios/ipa \
+            -allowProvisioningUpdates
+          echo "IPA exported and signed"
 
       - name: Validate IPA
         id: validate
