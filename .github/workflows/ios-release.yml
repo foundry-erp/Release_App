@@ -117,23 +117,27 @@ jobs:
       - name: Install provisioning profile
         id: profile
         run: |
-          echo "${{ secrets.AIKYAT_FLUTTER_RELEASE_IOS_PROVISIONING_PROFILE }}" | base64 --decode > /tmp/profile.mobileprovision
-          if [ ! -s /tmp/profile.mobileprovision ]; then
-            echo "::error::Provisioning profile decode failed"
+          # Use printf to avoid echo adding newlines; -D is macOS base64 flag
+          printf '%s' "${{ secrets.AIKYAT_FLUTTER_RELEASE_IOS_PROVISIONING_PROFILE }}" | base64 -D > /tmp/profile.mobileprovision
+          FILE_SIZE=$(wc -c < /tmp/profile.mobileprovision | tr -d ' ')
+          echo "Profile file size: ${FILE_SIZE} bytes"
+          if [ "$FILE_SIZE" -lt 1000 ]; then
+            echo "::error::Provisioning profile too small (${FILE_SIZE} bytes) — likely corrupted"
             exit 1
           fi
-          # Extract UUID from the provisioning profile
-          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< "$(security cms -D -i /tmp/profile.mobileprovision)")
-          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print Name" /dev/stdin <<< "$(security cms -D -i /tmp/profile.mobileprovision)")
+          # Extract UUID and Name
+          PROFILE_PLIST=$(security cms -D -i /tmp/profile.mobileprovision)
+          PROFILE_UUID=$(echo "$PROFILE_PLIST" | /usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin)
+          PROFILE_NAME=$(echo "$PROFILE_PLIST" | /usr/libexec/PlistBuddy -c "Print Name" /dev/stdin)
+          echo "Profile UUID: ${PROFILE_UUID}"
+          echo "Profile Name: ${PROFILE_NAME}"
+          # Install
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp /tmp/profile.mobileprovision "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision"
           rm -f /tmp/profile.mobileprovision
           echo "profile_uuid=${PROFILE_UUID}" >> $GITHUB_OUTPUT
           echo "profile_name=${PROFILE_NAME}" >> $GITHUB_OUTPUT
-          echo "Provisioning profile installed: ${PROFILE_NAME} (${PROFILE_UUID})"
-          # Validate the installed profile is readable
-          ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision"
-          security cms -D -i "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision" | head -5
+          echo "Installed: ${PROFILE_NAME} (${PROFILE_UUID})"
 
       - name: Setup App Store Connect API Key
         run: |
@@ -187,11 +191,35 @@ jobs:
             --tree-shake-icons \
             --no-codesign
 
+      - name: Configure Runner signing (xcodeproj gem)
+        env:
+          TEAM_ID: ${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}
+          PROFILE_NAME: ${{ steps.profile.outputs.profile_name }}
+          PROFILE_UUID: ${{ steps.profile.outputs.profile_uuid }}
+        run: |
+          gem install xcodeproj --no-document
+          ruby -e '
+            require "xcodeproj"
+            project = Xcodeproj::Project.open("ios/Runner.xcodeproj")
+            project.targets.each do |target|
+              next unless target.name == "Runner"
+              target.build_configurations.each do |config|
+                config.build_settings["CODE_SIGN_STYLE"] = "Manual"
+                config.build_settings["DEVELOPMENT_TEAM"] = ENV["TEAM_ID"]
+                config.build_settings["PROVISIONING_PROFILE_SPECIFIER"] = ENV["PROFILE_NAME"]
+                config.build_settings["CODE_SIGN_IDENTITY"] = "Apple Distribution"
+                config.build_settings["CODE_SIGN_IDENTITY[sdk=iphoneos*]"] = "Apple Distribution"
+              end
+            end
+            project.save
+            puts "Runner signing configured: Manual, Team=#{ENV["TEAM_ID"]}, Profile=#{ENV["PROFILE_NAME"]}"
+          '
+
+      - name: Clean DerivedData
+        run: rm -rf ~/Library/Developer/Xcode/DerivedData/Runner-*
+
       - name: Archive and export IPA
         run: |
-          # Archive with CLI signing overrides (safe for all targets).
-          # PROVISIONING_PROFILE_SPECIFIER is NOT passed here — it breaks Pods.
-          # ExportOptions.plist handles provisioning during the export step.
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
@@ -199,9 +227,6 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath build/ios/archive/Runner.xcarchive \
             archive \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}" \
-            "CODE_SIGN_IDENTITY=Apple Distribution" \
             -allowProvisioningUpdates
 
           echo "Archive complete. Exporting IPA..."
