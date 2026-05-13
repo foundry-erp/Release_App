@@ -169,22 +169,18 @@ jobs:
           PROJECT="ios/Runner.xcodeproj/project.pbxproj"
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PROJECT"
           sed -i '' 's/"iPhone Developer"/"Apple Distribution"/g' "$PROJECT"
-          python3 -c "
-          import re, sys
-          with open('$PROJECT', 'r') as f:
-              content = f.read()
-          team_line = '\t\t\t\tDEVELOPMENT_TEAM = $TEAM_ID;'
-          profile_line = '\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$PROFILE_NAME\";'
-          content = content.replace(
-              'CODE_SIGN_STYLE = Manual;',
-              'CODE_SIGN_STYLE = Manual;\n' + team_line + '\n' + profile_line
-          )
-          with open('$PROJECT', 'w') as f:
-              f.write(content)
-          "
-          echo "Patched project.pbxproj for manual signing"
-          grep -c "CODE_SIGN_STYLE = Manual" "$PROJECT"
-          grep -c "DEVELOPMENT_TEAM" "$PROJECT"
+          # Use awk to insert DEVELOPMENT_TEAM and PROVISIONING_PROFILE_SPECIFIER
+          awk -v team="$TEAM_ID" -v profile="$PROFILE_NAME" '
+          {
+            print
+            if ($0 ~ /CODE_SIGN_STYLE = Manual;/) {
+              print "\t\t\t\tDEVELOPMENT_TEAM = " team ";"
+              print "\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"" profile "\";"
+            }
+          }' "$PROJECT" > "${PROJECT}.tmp" && mv "${PROJECT}.tmp" "$PROJECT"
+          echo "Patched project.pbxproj:"
+          grep -c "CODE_SIGN_STYLE = Manual" "$PROJECT" | xargs -I{} echo "  Manual signing entries: {}"
+          grep -c "DEVELOPMENT_TEAM" "$PROJECT" | xargs -I{} echo "  DEVELOPMENT_TEAM entries: {}"
 
       - name: Build iOS IPA
         run: |
