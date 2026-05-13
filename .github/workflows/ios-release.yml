@@ -116,28 +116,42 @@ jobs:
 
       - name: Install provisioning profile
         id: profile
+        env:
+          PROFILE_B64: ${{ secrets.AIKYAT_FLUTTER_RELEASE_IOS_PROVISIONING_PROFILE }}
         run: |
-          # Use printf to avoid echo adding newlines; -D is macOS base64 flag
-          printf '%s' "${{ secrets.AIKYAT_FLUTTER_RELEASE_IOS_PROVISIONING_PROFILE }}" | base64 -D > /tmp/profile.mobileprovision
+          # Write base64 to file, strip ALL whitespace, then decode
+          echo "$PROFILE_B64" > /tmp/profile.b64
+          tr -d '\n\r\t ' < /tmp/profile.b64 > /tmp/profile_clean.b64
+          B64_SIZE=$(wc -c < /tmp/profile_clean.b64 | tr -d ' ')
+          echo "Base64 size: ${B64_SIZE} chars"
+          base64 -D -i /tmp/profile_clean.b64 -o /tmp/profile.mobileprovision
           FILE_SIZE=$(wc -c < /tmp/profile.mobileprovision | tr -d ' ')
-          echo "Profile file size: ${FILE_SIZE} bytes"
+          echo "Profile binary size: ${FILE_SIZE} bytes"
           if [ "$FILE_SIZE" -lt 1000 ]; then
-            echo "::error::Provisioning profile too small (${FILE_SIZE} bytes) — likely corrupted"
+            echo "::error::Provisioning profile too small (${FILE_SIZE} bytes)"
             exit 1
           fi
-          # Extract UUID and Name
-          PROFILE_PLIST=$(security cms -D -i /tmp/profile.mobileprovision)
-          PROFILE_UUID=$(echo "$PROFILE_PLIST" | /usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin)
-          PROFILE_NAME=$(echo "$PROFILE_PLIST" | /usr/libexec/PlistBuddy -c "Print Name" /dev/stdin)
+          # Verify CMS signature is valid
+          security cms -D -i /tmp/profile.mobileprovision > /tmp/profile_plist.xml 2>&1
+          CMS_EXIT=$?
+          echo "CMS decode exit code: ${CMS_EXIT}"
+          if [ $CMS_EXIT -ne 0 ]; then
+            echo "::error::CMS signature verification failed"
+            exit 1
+          fi
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /tmp/profile_plist.xml)
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print Name" /tmp/profile_plist.xml)
           echo "Profile UUID: ${PROFILE_UUID}"
           echo "Profile Name: ${PROFILE_NAME}"
-          # Install
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp /tmp/profile.mobileprovision "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision"
-          rm -f /tmp/profile.mobileprovision
+          # Verify installed file matches original
+          INSTALLED_MD5=$(md5 -q "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision")
+          ORIGINAL_MD5=$(md5 -q /tmp/profile.mobileprovision)
+          echo "MD5 match: original=${ORIGINAL_MD5} installed=${INSTALLED_MD5}"
+          rm -f /tmp/profile.b64 /tmp/profile_clean.b64 /tmp/profile.mobileprovision /tmp/profile_plist.xml
           echo "profile_uuid=${PROFILE_UUID}" >> $GITHUB_OUTPUT
           echo "profile_name=${PROFILE_NAME}" >> $GITHUB_OUTPUT
-          echo "Installed: ${PROFILE_NAME} (${PROFILE_UUID})"
 
       - name: Setup App Store Connect API Key
         run: |
