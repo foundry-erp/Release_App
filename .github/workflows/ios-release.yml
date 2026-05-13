@@ -208,7 +208,6 @@ jobs:
       - name: Configure Runner signing (xcodeproj gem)
         env:
           TEAM_ID: ${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}
-          PROFILE_NAME: ${{ steps.profile.outputs.profile_name }}
           PROFILE_UUID: ${{ steps.profile.outputs.profile_uuid }}
         run: |
           gem install xcodeproj --no-document
@@ -220,13 +219,15 @@ jobs:
               target.build_configurations.each do |config|
                 config.build_settings["CODE_SIGN_STYLE"] = "Manual"
                 config.build_settings["DEVELOPMENT_TEAM"] = ENV["TEAM_ID"]
-                config.build_settings["PROVISIONING_PROFILE_SPECIFIER"] = ENV["PROFILE_NAME"]
                 config.build_settings["CODE_SIGN_IDENTITY"] = "Apple Distribution"
                 config.build_settings["CODE_SIGN_IDENTITY[sdk=iphoneos*]"] = "Apple Distribution"
+                # Use UUID directly — DVTProvisioningProfileManager cant load by name
+                config.build_settings["PROVISIONING_PROFILE"] = ENV["PROFILE_UUID"]
+                config.build_settings["PROVISIONING_PROFILE_SPECIFIER"] = ""
               end
             end
             project.save
-            puts "Runner signing configured: Manual, Team=#{ENV["TEAM_ID"]}, Profile=#{ENV["PROFILE_NAME"]}"
+            puts "Runner signing configured: Manual, Team=#{ENV["TEAM_ID"]}, ProfileUUID=#{ENV["PROFILE_UUID"]}"
           '
 
       - name: Clean DerivedData
