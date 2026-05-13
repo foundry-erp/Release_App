@@ -165,27 +165,26 @@ jobs:
         env:
           TEAM_ID: ${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}
           PROFILE_NAME: ${{ steps.profile.outputs.profile_name }}
-          PROFILE_UUID: ${{ steps.profile.outputs.profile_uuid }}
         run: |
-          # The Xcode project defaults to automatic signing which fails in CI.
-          # Patch project.pbxproj for manual signing with distribution cert.
           PROJECT="ios/Runner.xcodeproj/project.pbxproj"
-
-          # 1. Switch signing style
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PROJECT"
-
-          # 2. Replace iPhone Developer identity with Apple Distribution
           sed -i '' 's/"iPhone Developer"/"Apple Distribution"/g' "$PROJECT"
-
-          # 3. Add DEVELOPMENT_TEAM, PROVISIONING_PROFILE_SPECIFIER after each CODE_SIGN_STYLE = Manual
-          sed -i '' "/CODE_SIGN_STYLE = Manual;/a\\
-\\				DEVELOPMENT_TEAM = ${TEAM_ID};\\
-\\				PROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";
-" "$PROJECT"
-
+          python3 -c "
+          import re, sys
+          with open('$PROJECT', 'r') as f:
+              content = f.read()
+          team_line = '\t\t\t\tDEVELOPMENT_TEAM = $TEAM_ID;'
+          profile_line = '\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"$PROFILE_NAME\";'
+          content = content.replace(
+              'CODE_SIGN_STYLE = Manual;',
+              'CODE_SIGN_STYLE = Manual;\n' + team_line + '\n' + profile_line
+          )
+          with open('$PROJECT', 'w') as f:
+              f.write(content)
+          "
           echo "Patched project.pbxproj for manual signing"
-          grep -c "CODE_SIGN_STYLE = Manual" "$PROJECT" && echo "Manual signing entries found"
-          grep -c "DEVELOPMENT_TEAM = ${TEAM_ID}" "$PROJECT" && echo "Team ID entries found"
+          grep -c "CODE_SIGN_STYLE = Manual" "$PROJECT"
+          grep -c "DEVELOPMENT_TEAM" "$PROJECT"
 
       - name: Build iOS IPA
         run: |
