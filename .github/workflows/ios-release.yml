@@ -55,7 +55,17 @@ jobs:
       - name: Install CocoaPods dependencies
         working-directory: ./foundry-app/flutter/ios
         run: |
-          pod install --repo-update
+          for attempt in 1 2 3; do
+            echo "CocoaPods install attempt $attempt..."
+            pod install --repo-update && break
+            if [ $attempt -lt 3 ]; then
+              echo "::warning::CocoaPods CDN failed (attempt $attempt/3), retrying in 30s..."
+              sleep 30
+            else
+              echo "::error::CocoaPods install failed after 3 attempts"
+              exit 1
+            fi
+          done
           echo "CocoaPods installation complete"
 
       - name: Configure Firebase (GoogleService-Info.plist)
