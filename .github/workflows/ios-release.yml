@@ -1,0 +1,232 @@
+name: iOS App Store Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — build IPA only, skip TestFlight upload'
+        required: true
+        default: true
+        type: boolean
+      flutter_version:
+        description: 'Flutter version'
+        required: false
+        default: '3.24.5'
+        type: string
+
+concurrency:
+  group: ios-release
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: ./foundry-app/flutter
+
+jobs:
+  ios-release:
+    name: Build & Deploy Foundry Position iOS
+    runs-on: macos-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        timeout-minutes: 5
+        with:
+          flutter-version: ${{ inputs.flutter_version }}
+          channel: 'stable'
+          cache: true
+
+      - name: Flutter version check
+        run: |
+          flutter --version
+          echo "Dart SDK: $(dart --version)"
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Install CocoaPods dependencies
+        working-directory: ./foundry-app/flutter/ios
+        run: |
+          pod install --repo-update
+          echo "CocoaPods installation complete"
+
+      - name: Configure Firebase (GoogleService-Info.plist)
+        run: |
+          echo "${{ secrets.FOUNDRY_APP_IOS_GOOGLE_SERVICE_INFO }}" | base64 --decode > ios/Runner/GoogleService-Info.plist
+          if [ ! -s ios/Runner/GoogleService-Info.plist ]; then
+            echo "::error::GoogleService-Info.plist decode failed or is empty"
+            exit 1
+          fi
+          echo "Firebase config written to ios/Runner/GoogleService-Info.plist"
+
+      - name: Create .env file
+        run: |
+          echo "API_BASE_URL=${{ secrets.FOUNDRY_APP_API_BASE_URL }}" > .env
+          echo ".env file created"
+
+      - name: Setup Keychain for code signing
+        run: |
+          KEYCHAIN_PASSWORD="${{ secrets.AIKYAT_RUNNER_KEYCHAIN_PASSWORD }}"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 7200 -u build.keychain
+          echo "Keychain created and configured"
+
+      - name: Import signing certificate (P12)
+        run: |
+          echo "${{ secrets.AIKYAT_FLUTTER_RELEASE_IOS_SIGNING_CERT }}" | base64 --decode > /tmp/dist_cert.p12
+          if [ ! -s /tmp/dist_cert.p12 ]; then
+            echo "::error::Signing certificate decode failed"
+            exit 1
+          fi
+          security import /tmp/dist_cert.p12 \
+            -k build.keychain \
+            -P "${{ secrets.AIKYAT_FLUTTER_RELEASE_IOS_SIGNING_CERT_PASSWORD }}" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "${{ secrets.AIKYAT_RUNNER_KEYCHAIN_PASSWORD }}" \
+            build.keychain
+          rm -f /tmp/dist_cert.p12
+          echo "Distribution certificate imported"
+
+      - name: Install provisioning profile
+        id: profile
+        run: |
+          echo "${{ secrets.AIKYAT_FLUTTER_RELEASE_IOS_PROVISIONING_PROFILE }}" | base64 --decode > /tmp/profile.mobileprovision
+          if [ ! -s /tmp/profile.mobileprovision ]; then
+            echo "::error::Provisioning profile decode failed"
+            exit 1
+          fi
+          # Extract UUID from the provisioning profile
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< "$(security cms -D -i /tmp/profile.mobileprovision)")
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print Name" /dev/stdin <<< "$(security cms -D -i /tmp/profile.mobileprovision)")
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp /tmp/profile.mobileprovision "$HOME/Library/MobileDevice/Provisioning Profiles/${PROFILE_UUID}.mobileprovision"
+          rm -f /tmp/profile.mobileprovision
+          echo "profile_uuid=${PROFILE_UUID}" >> $GITHUB_OUTPUT
+          echo "profile_name=${PROFILE_NAME}" >> $GITHUB_OUTPUT
+          echo "Provisioning profile installed: ${PROFILE_NAME} (${PROFILE_UUID})"
+
+      - name: Setup App Store Connect API Key
+        run: |
+          mkdir -p ~/.private_keys
+          echo "${{ secrets.AIKYAT_FLUTTER_RELEASE_ASC_KEY }}" | base64 --decode > ~/.private_keys/AuthKey_${{ secrets.AIKYAT_FLUTTER_RELEASE_ASC_KEY_ID }}.p8
+          if [ ! -s ~/.private_keys/AuthKey_${{ secrets.AIKYAT_FLUTTER_RELEASE_ASC_KEY_ID }}.p8 ]; then
+            echo "::error::ASC API Key decode failed"
+            exit 1
+          fi
+          chmod 600 ~/.private_keys/AuthKey_${{ secrets.AIKYAT_FLUTTER_RELEASE_ASC_KEY_ID }}.p8
+          echo "App Store Connect API key configured"
+
+      - name: Write ExportOptions.plist for manual signing
+        run: |
+          cat > ios/ExportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store</string>
+            <key>destination</key>
+            <string>export</string>
+            <key>teamID</key>
+            <string>${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>signingCertificate</key>
+            <string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${{ secrets.AIKYAT_FLUTTER_RELEASE_IOS_BUNDLE_ID }}</key>
+              <string>${{ steps.profile.outputs.profile_name }}</string>
+            </dict>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>compileBitcode</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
+          echo "ExportOptions.plist configured for manual signing"
+          cat ios/ExportOptions.plist
+
+      - name: Build iOS IPA
+        run: |
+          flutter build ipa \
+            --release \
+            --obfuscate \
+            --split-debug-info=build/debug-info/ios \
+            --tree-shake-icons \
+            --export-options-plist=ios/ExportOptions.plist
+
+      - name: Validate IPA
+        id: validate
+        run: |
+          IPA_PATH=$(find build/ios/ipa -name "*.ipa" -type f | head -1)
+          if [ -n "$IPA_PATH" ]; then
+            SIZE=$(ls -lh "$IPA_PATH" | awk '{print $5}')
+            echo "ipa_path=${IPA_PATH}" >> $GITHUB_OUTPUT
+            echo "### ✅ IPA Built Successfully" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **File:** \`${IPA_PATH}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Size:** ${SIZE}" >> $GITHUB_STEP_SUMMARY
+            echo "IPA found: ${IPA_PATH} (${SIZE})"
+          else
+            echo "::error::No IPA file found in build/ios/ipa/"
+            ls -laR build/ios/ 2>/dev/null || echo "build/ios/ not found"
+            exit 1
+          fi
+
+      - name: Upload IPA as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundry-position-ios-${{ github.run_number }}
+          path: foundry-app/flutter/build/ios/ipa/*.ipa
+          retention-days: 14
+
+      - name: Upload debug symbols as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundry-position-dsyms-${{ github.run_number }}
+          path: foundry-app/flutter/build/debug-info/ios/
+          retention-days: 30
+
+      - name: Upload to TestFlight
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          echo "Uploading to TestFlight..."
+          xcrun altool --upload-app \
+            --type ios \
+            --file "${{ steps.validate.outputs.ipa_path }}" \
+            --apiKey "${{ secrets.AIKYAT_FLUTTER_RELEASE_ASC_KEY_ID }}" \
+            --apiIssuer "${{ secrets.AIKYAT_FLUTTER_RELEASE_ASC_ISSUER_ID }}"
+          echo "### 🚀 Uploaded to TestFlight" >> $GITHUB_STEP_SUMMARY
+
+      - name: Dry run notice
+        if: ${{ inputs.dry_run == true }}
+        run: |
+          echo "### 🧪 Dry Run Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "IPA built successfully and uploaded as workflow artifact." >> $GITHUB_STEP_SUMMARY
+          echo "To deploy to TestFlight, re-run this workflow with **dry_run = false**." >> $GITHUB_STEP_SUMMARY
+
+      - name: Workflow summary
+        if: always()
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "**App:** Foundry Position" >> $GITHUB_STEP_SUMMARY
+          echo "**Bundle ID:** ${{ secrets.AIKYAT_FLUTTER_RELEASE_IOS_BUNDLE_ID }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Team:** ${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Flutter:** ${{ inputs.flutter_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Dry Run:** ${{ inputs.dry_run }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
