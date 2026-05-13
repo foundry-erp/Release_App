@@ -1,0 +1,3 @@
+[submodule "foundry-app/flutter"]
+	path = foundry-app/flutter
+	url = https://github.com/VijayBhatcolligence/Foundry.git
