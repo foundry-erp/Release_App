@@ -173,13 +173,12 @@ jobs:
           PROJECT="ios/Runner.xcodeproj/project.pbxproj"
           sed -i '' 's/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g' "$PROJECT"
           sed -i '' 's/"iPhone Developer"/"Apple Distribution"/g' "$PROJECT"
-          # Use awk to insert DEVELOPMENT_TEAM and PROVISIONING_PROFILE_SPECIFIER
-          awk -v team="$TEAM_ID" -v profile="$PROFILE_NAME" '
+          # Use awk to insert DEVELOPMENT_TEAM after each Manual signing entry
+          awk -v team="$TEAM_ID" '
           {
             print
             if ($0 ~ /CODE_SIGN_STYLE = Manual;/) {
               print "\t\t\t\tDEVELOPMENT_TEAM = " team ";"
-              print "\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"" profile "\";"
             }
           }' "$PROJECT" > "${PROJECT}.tmp" && mv "${PROJECT}.tmp" "$PROJECT"
           echo "Patched project.pbxproj:"
@@ -205,15 +204,15 @@ jobs:
             -archivePath build/ios/archive/Runner.xcarchive \
             archive \
             CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM=${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }} \
+            DEVELOPMENT_TEAM="${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}" \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="${{ steps.profile.outputs.profile_name }}"
+            "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]=${{ steps.profile.outputs.profile_name }}" \
+            -allowProvisioningUpdates
 
           xcodebuild -exportArchive \
             -archivePath build/ios/archive/Runner.xcarchive \
             -exportOptionsPlist ios/ExportOptions.plist \
-            -exportPath build/ios/ipa \
-            -allowProvisioningUpdates
+            -exportPath build/ios/ipa
 
       - name: Validate IPA
         id: validate
