@@ -222,21 +222,6 @@ jobs:
             --tree-shake-icons \
             --no-codesign
 
-      - name: Patch App.framework MinimumOSVersion
-        run: |
-          # Flutter's App.framework may lack MinimumOSVersion in its Info.plist,
-          # causing App Store validation to reject the upload.
-          APP_FW="build/ios/iphoneos/Runner.app/Frameworks/App.framework/Info.plist"
-          if [ -f "$APP_FW" ]; then
-            /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string 16.0" "$APP_FW" 2>/dev/null \
-              || /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 16.0" "$APP_FW"
-            echo "Patched App.framework MinimumOSVersion to 16.0"
-            /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$APP_FW"
-          else
-            echo "::warning::App.framework Info.plist not found at expected path"
-            find build/ios -name "Info.plist" -path "*/App.framework/*" 2>/dev/null || true
-          fi
-
       - name: Clean DerivedData
         run: rm -rf ~/Library/Developer/Xcode/DerivedData/Runner-*
 
@@ -257,6 +242,23 @@ jobs:
             CODE_SIGN_ENTITLEMENTS="" \
             DEVELOPMENT_TEAM="${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}"
           echo "Archive complete (unsigned)"
+
+      - name: Patch App.framework MinimumOSVersion
+        run: |
+          # Flutter's App.framework may lack MinimumOSVersion in its Info.plist,
+          # causing App Store validation to reject the upload.
+          # Must patch AFTER archive (which rebuilds from source) but BEFORE export.
+          ARCHIVE_APP="build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app"
+          APP_FW="$ARCHIVE_APP/Frameworks/App.framework/Info.plist"
+          if [ -f "$APP_FW" ]; then
+            /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string 16.0" "$APP_FW" 2>/dev/null \
+              || /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 16.0" "$APP_FW"
+            echo "Patched App.framework MinimumOSVersion to 16.0"
+            /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$APP_FW"
+          else
+            echo "::warning::App.framework Info.plist not found at expected path, searching..."
+            find build/ios/archive -name "Info.plist" -path "*/App.framework/*" 2>/dev/null
+          fi
 
       - name: Export and sign IPA
         run: |
