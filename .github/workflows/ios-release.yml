@@ -85,12 +85,25 @@ jobs:
 
       - name: Configure Firebase (GoogleService-Info.plist)
         run: |
-          echo "${{ secrets.FOUNDRY_APP_IOS_GOOGLE_SERVICE_INFO }}" | base64 --decode > ios/Runner/GoogleService-Info.plist
-          if [ ! -s ios/Runner/GoogleService-Info.plist ]; then
-            echo "::error::GoogleService-Info.plist decode failed or is empty"
-            exit 1
+          # The submodule ships a valid GoogleService-Info.plist.
+          # Only overwrite if the secret is set and decodes to a valid plist.
+          if [ -n "${{ secrets.FOUNDRY_APP_IOS_GOOGLE_SERVICE_INFO }}" ]; then
+            echo "${{ secrets.FOUNDRY_APP_IOS_GOOGLE_SERVICE_INFO }}" | base64 --decode > /tmp/gsi_candidate.plist
+            if /usr/libexec/PlistBuddy -c "Print GOOGLE_APP_ID" /tmp/gsi_candidate.plist > /dev/null 2>&1; then
+              cp /tmp/gsi_candidate.plist ios/Runner/GoogleService-Info.plist
+              echo "Firebase config overwritten from secret"
+            else
+              echo "::warning::Secret plist missing GOOGLE_APP_ID — keeping repo version"
+            fi
+            rm -f /tmp/gsi_candidate.plist
+          else
+            echo "No secret set — using repo GoogleService-Info.plist"
           fi
-          echo "Firebase config written to ios/Runner/GoogleService-Info.plist"
+          # Verify final plist
+          echo "GoogleService-Info.plist contents:"
+          /usr/libexec/PlistBuddy -c "Print GOOGLE_APP_ID" ios/Runner/GoogleService-Info.plist
+          /usr/libexec/PlistBuddy -c "Print BUNDLE_ID" ios/Runner/GoogleService-Info.plist
+          /usr/libexec/PlistBuddy -c "Print PROJECT_ID" ios/Runner/GoogleService-Info.plist
 
       - name: Create .env file
         run: |
@@ -275,6 +288,18 @@ jobs:
           else
             echo "::warning::App.framework Info.plist not found at expected path, searching..."
             find build/ios/archive -name "Info.plist" -path "*/App.framework/*" 2>/dev/null
+          fi
+
+      - name: Verify GoogleService-Info.plist in archive
+        run: |
+          ARCHIVE_APP="build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app"
+          GSI="$ARCHIVE_APP/GoogleService-Info.plist"
+          if [ -f "$GSI" ]; then
+            echo "GoogleService-Info.plist found in archive bundle"
+            /usr/libexec/PlistBuddy -c "Print GOOGLE_APP_ID" "$GSI"
+          else
+            echo "::warning::GoogleService-Info.plist NOT in archive bundle — searching..."
+            find build/ios/archive -name "GoogleService-Info.plist" 2>/dev/null
           fi
 
       - name: Export and sign IPA
