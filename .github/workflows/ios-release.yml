@@ -13,6 +13,16 @@ on:
         required: false
         default: '3.24.5'
         type: string
+      app_version:
+        description: 'App marketing version (CFBundleShortVersionString)'
+        required: false
+        default: '3.0.0'
+        type: string
+      build_number:
+        description: 'Build number (CFBundleVersion) — leave empty to use run number'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: ios-release
@@ -215,8 +225,15 @@ jobs:
 
       - name: Build Flutter iOS (no codesign)
         run: |
+          BUILD_NUM="${{ inputs.build_number }}"
+          if [ -z "$BUILD_NUM" ]; then
+            BUILD_NUM="${{ github.run_number }}"
+          fi
+          echo "Building version ${{ inputs.app_version }}+${BUILD_NUM}"
           flutter build ios \
             --release \
+            --build-name="${{ inputs.app_version }}" \
+            --build-number="${BUILD_NUM}" \
             --obfuscate \
             --split-debug-info=build/debug-info/ios \
             --tree-shake-icons \
@@ -336,6 +353,7 @@ jobs:
           echo "**App:** Foundry Position" >> $GITHUB_STEP_SUMMARY
           echo "**Bundle ID:** ${{ secrets.AIKYAT_FLUTTER_RELEASE_IOS_BUNDLE_ID }}" >> $GITHUB_STEP_SUMMARY
           echo "**Team:** ${{ secrets.AIKYAT_FLUTTER_RELEASE_APPLE_TEAM_ID }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ inputs.app_version }}+${{ inputs.build_number || github.run_number }}" >> $GITHUB_STEP_SUMMARY
           echo "**Flutter:** ${{ inputs.flutter_version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Dry Run:** ${{ inputs.dry_run }}" >> $GITHUB_STEP_SUMMARY
           echo "**Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
