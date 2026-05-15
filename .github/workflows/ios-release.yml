@@ -303,12 +303,20 @@ jobs:
         if: ${{ inputs.dry_run == false }}
         run: |
           echo "Uploading to TestFlight..."
+          UPLOAD_LOG=$(mktemp)
           xcrun altool --upload-app \
             --type ios \
             --file "${{ steps.validate.outputs.ipa_path }}" \
             --apiKey "${{ secrets.AIKYAT_FLUTTER_RELEASE_ASC_KEY_ID }}" \
-            --apiIssuer "${{ secrets.AIKYAT_FLUTTER_RELEASE_ASC_ISSUER_ID }}"
-          echo "### 🚀 Uploaded to TestFlight" >> $GITHUB_STEP_SUMMARY
+            --apiIssuer "${{ secrets.AIKYAT_FLUTTER_RELEASE_ASC_ISSUER_ID }}" 2>&1 | tee "$UPLOAD_LOG"
+          # altool can exit 0 even on server-side validation failure — check output
+          if grep -qi "UPLOAD FAILED\|Failed to upload\|ERROR:" "$UPLOAD_LOG"; then
+            echo "::error::TestFlight upload failed — see log above"
+            rm -f "$UPLOAD_LOG"
+            exit 1
+          fi
+          rm -f "$UPLOAD_LOG"
+          echo "### Uploaded to TestFlight" >> $GITHUB_STEP_SUMMARY
 
       - name: Dry run notice
         if: ${{ inputs.dry_run == true }}
