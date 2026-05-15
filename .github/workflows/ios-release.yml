@@ -222,6 +222,21 @@ jobs:
             --tree-shake-icons \
             --no-codesign
 
+      - name: Patch App.framework MinimumOSVersion
+        run: |
+          # Flutter's App.framework may lack MinimumOSVersion in its Info.plist,
+          # causing App Store validation to reject the upload.
+          APP_FW="build/ios/iphoneos/Runner.app/Frameworks/App.framework/Info.plist"
+          if [ -f "$APP_FW" ]; then
+            /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string 16.0" "$APP_FW" 2>/dev/null \
+              || /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 16.0" "$APP_FW"
+            echo "Patched App.framework MinimumOSVersion to 16.0"
+            /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$APP_FW"
+          else
+            echo "::warning::App.framework Info.plist not found at expected path"
+            find build/ios -name "Info.plist" -path "*/App.framework/*" 2>/dev/null || true
+          fi
+
       - name: Clean DerivedData
         run: rm -rf ~/Library/Developer/Xcode/DerivedData/Runner-*
 
